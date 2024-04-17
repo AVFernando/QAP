@@ -7,11 +7,8 @@ class QAP_Instance:
     def __init__(self, flow, distance):
         self.flow_matrix = flow
         self.distance_matrix = distance
-        print("\nMatrices generadas aleatoriamente:")
-        print("Matriz de flujo:")
-        print(self.flow_matrix)
-        print("\nMatriz de distancia:")
-        print(self.distance_matrix)
+        print(f"Matriz de flujo:\n{self.flow_matrix}\n")
+        print(f"Matriz de distancia:\n{self.distance_matrix}\n")
 
 class QAP_State:
     def __init__(self, instance, assigned=[0]):
@@ -28,9 +25,8 @@ class QAP_State:
 
         flow_cost = self.instance.flow_matrix[place1, place2]
         distance_cost = self.instance.distance_matrix[i, j]
-
+        print(f"Costo total de la asignacion entre {place1},{place2} y {i},{j}: {flow_cost * distance_cost}\n")
         return flow_cost * distance_cost
-
 
     def update_cost(self):
         n = len(self.assigned)
@@ -96,7 +92,12 @@ class QAP_Environment():
                 state.all_assigned = True
 
         elif action[0] == move_type.SWAP and state.all_assigned == True:
-            print("\nMomento de hacer swap o two-opt")
+            i, j = action[1]
+            state.assigned[i], state.assigned[j] = \
+                state.assigned[j], state.assigned[i]
+            state.update_cost()
+
+        elif action[0] == move_type.TWO_OPT and state.all_assigned == True:
             i, j = action[1]
             if i not in state.assigned or j not in state.assigned:
                 raise ValueError(f"Las instalaciones {i} y/o {j} no están asignadas.")
@@ -107,7 +108,6 @@ class QAP_Environment():
             state.update_cost()
 
         elif action[0] == move_type.RELOCATION and state.all_assigned == True:
-            print("\nMomento de hacer relocation")
             i, j = action[1]
             if i not in state.assigned or j not in state.assigned:
                 raise ValueError(f"Las instalaciones {i} y/o {j} no están asignadas.")
@@ -121,45 +121,25 @@ class QAP_Environment():
 
         return state
 
+    @staticmethod
     def calculate_cost_after_action(state, action):
         if action[0] == move_type.SWAP:
             k, l = action[1]
+            state.assigned[k], state.assigned[l] = \
+                state.assigned[l], state.assigned[k]
 
-            # Swap the facilities in the assignment array
-            state.assignment_array[k], state.assignment_array[l] = \
-                state.assignment_array[l], state.assignment_array[k]
-
-            # Calculate the change in cost caused by the swap
-            old_cost = state.cost
-
-            # Calculate the change in cost for the swapped facilities
-            change_in_cost = 0
-            n = len(state.assignment_array)
+            new_cost = 0
+            n = len(state.assigned)
             for i in range(n):
-                if i != k and i != l:  # Exclude the swapped facilities
-                    facility1 = state.assignment_array[i]
-                    facility2_k = state.assignment_array[k]
-                    facility2_l = state.assignment_array[l]
-
+                for j in range(n):
+                    facility1 = state.assigned[i]
+                    facility2 = state.assigned[j]
                     location1 = i
-                    location2_k = k
-                    location2_l = l
-
-                    # Calculate the change in cost for swapping k and i with l and i
-                    change_in_cost += (state.instance.flow_matrix[facility1, facility2_l] - 
-                                       state.instance.flow_matrix[facility1, facility2_k]) * \
-                                        state.instance.distance_matrix[location1, location2_k] + \
-                                        (state.instance.flow_matrix[facility1, facility2_k] - 
-                                       state.instance.flow_matrix[facility1, facility2_l]) * \
-                                        state.instance.distance_matrix[location1, location2_l]
-
-            # Update the cost with the change
-            new_cost = old_cost + change_in_cost
-            state.cost = new_cost
-
-            # Swap back to the original assignment array
-            state.assignment_array[k], state.assignment_array[l] = \
-                state.assignment_array[l], state.assignment_array[k]
+                    location2 = j
+                    new_cost += state.instance.flow_matrix[facility1][facility2] * \
+                                state.instance.distance_matrix[location1][location2]
+            state.assigned[l], state.assigned[k] = \
+                state.assigned[k], state.assigned[l]
 
             return new_cost
 
@@ -222,15 +202,17 @@ class LocalSearchAgent(GreedyAgent):
         return new_instance
 
 #--------------------------------------------------------------------------------
-flow = np.array([[0, 3, 1, 2], 
-                 [3, 0, 1, 1], 
-                 [1, 1, 0, 4], 
-                 [2, 1, 4, 0]])
+flow = np.array([
+    [0, 8, 6],
+    [8, 0, 5],
+    [6, 5, 0]
+])
 
-distance = np.array([[0,    22,   53, 1000],
-                     [22,   0,    40, 1000],
-                     [53,   40,   0,  55],  
-                     [1000, 1000, 55, 0]])  
+distance = np.array([
+    [0, 3, 4],
+    [3, 0, 2],
+    [4, 2, 0]
+])  
 
 env = QAP_Environment()
 instance = QAP_Instance(flow, distance)
@@ -245,9 +227,16 @@ while True:
 print(f"\nEstado Final:\n{current_state}\n")
 
 agent = LocalSearchAgent(move_type.SWAP, first_improvement=True)
+current_cost = current_state.cost
+
 while True:
     action = agent.action_policy(current_state, env)
     if action is None:
         break
-current_state = env.state_transition(current_state, action)
-print(f"\nEstado Final:\n{current_state}")
+    current_state = env.state_transition(current_state, action)
+    
+    new_cost = current_state.cost
+    if new_cost >= current_cost:
+        break
+    current_cost = new_cost
+print(f"\nEstado Final:\n{current_state}\n")
