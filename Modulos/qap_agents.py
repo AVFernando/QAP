@@ -203,3 +203,60 @@ class ILS_Solver:
                     best_solution = deepcopy(current_solution)
 
         return best_solution, history, n_actions
+
+class TabuSearchSolver():
+    def __init__(self, action_type, tabu_size, budget=100):
+        self.action_type = action_type
+        self.tabu_size = tabu_size
+        self.budget = budget
+        self.tabu_list = []
+
+    def reset(self):
+        self.tabu_list.clear()
+        self.iter=0
+    
+    def ts_solve(self, state, env):
+        current_cost = state.cost
+        best_state = deepcopy(state)
+        best_cost = current_cost
+
+        while self.iter < self.budget:
+            action = self.action_policy(state, env)
+            if action is None:
+                break
+
+            state = env.state_transition(state, action)
+            new_cost = state.cost
+
+            if new_cost < best_cost:
+                best_state = deepcopy(state)
+                best_cost = new_cost
+
+            self.update_tabu_list(action)
+
+    def action_policy(self, state, env):
+        if self.iter >= self.budget: return None
+
+        best_cost = np.inf
+        best_action = None
+        for action in env.gen_actions(state, self.action_type):
+            if action in self.tabu_list: continue
+
+            new_cost = env.calculate_cost_after_action(state, action)
+            if new_cost < best_cost:
+                best_cost = new_cost
+                best_action = action
+
+        #truncate to maxsize
+        self.tabu_list = self.tabu_list[-self.tabu_size:]
+
+        self.iter+=1
+        return best_action
+
+    def select_action(self, evals):
+        return max(evals, key=lambda x: x[1])[0]
+    
+    def update_tabu_list(self, action):
+        self.tabu_list.append(action)
+        if len(self.tabu_list) > self.tabu_size:
+            self.tabu_list.pop(0)
